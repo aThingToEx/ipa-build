@@ -8,7 +8,7 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      - name: Checkout Source Code
+      - name: Checkout Game Source Code
         uses: actions/checkout@v4
 
       - name: Setup Node.js Environment
@@ -22,65 +22,41 @@ jobs:
           npm install
           npm run build 
 
-      - name: Initialize Capacitor iOS Container
+      - name: Inject Clean Native iOS Wrapper
         run: |
-          # Install development dependencies
-          npm install @capacitor/core @capacitor/cli @capacitor/ios
+          # 1. Download a clean, ready-made native WKWebView wrapper template
+          git clone https://github.com ios-wrapper
           
-          # Initialize configuration files non-interactively via direct arguments
-          npx cap init "PuzzleForge Hub" "com.sideload.puzzleforge" --web-dir=dist
+          # 2. Clear out the template's placeholder website files
+          rm -rf ios-wrapper/ios-webview-app/www/*
           
-          # Create a dummy 'pod' command in the runner path to skip automatic pod install during add
-          mkdir -p bin
-          echo '#!/bin/bash' > bin/pod
-          echo 'echo "Mocking pod install to bypass target check..."' >> bin/pod
-          chmod +x bin/pod
-          export PATH="$PWD/bin:$PATH"
-          
-          # Run add ios safely (it will use our dummy pod command instead of crashing)
-          npx cap add ios
-          
-          # Overwrite the Podfile completely with a forced global iOS 14 configuration
-          cat << 'EOF' > ios/App/Podfile
-          platform :ios, '14.0'
-          use_frameworks!
-
-          def capacitor_pods
-            pod 'Capacitor', :path => '../../node_modules/@capacitor/ios'
-            pod 'CapacitorCordova', :path => '../../node_modules/@capacitor/ios'
-          end
-
-          target 'App' do
-            capacitor_pods
-          end
-          EOF
-
-          # Copy compiled web assets over to the native public assets folder
-          npx cap copy ios
-          
-          # Remove the dummy pod script so we can trigger the genuine CocoaPods engine manually
-          rm bin/pod
-          
-          # Run the real pod install with our corrected deployment rules
-          cd ios/App
-          pod install
+          # 3. Move your compiled PuzzleForge game files straight into the native app package
+          cp -r dist/* ios-wrapper/ios-webview-app/www/
 
       - name: Compile Native App Bundle (Unsigned)
         run: |
-          cd ios/App
+          cd ios-wrapper
+          
+          # Force Xcode to compile for a modern target without needing code signing
           xcodebuild build \
-            -workspace App.xcworkspace \
-            -scheme App \
+            -project ios-webview-app.xcodeproj \
+            -scheme ios-webview-app \
             -configuration Release \
             -sdk iphoneos \
             IPHONEOS_DEPLOYMENT_TARGET=14.0 \
-            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
 
       - name: Package App into IPA Container
         run: |
-          APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "App.app" -type d | head -n 1)
+          # Find the successfully compiled standalone .app folder
+          APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "ios-webview-app.app" -type d | head -n 1)
+          
+          # Structure the Payload file setup required by Sideloadly
           mkdir -p Payload
           cp -r "$APP_PATH" Payload/
+          
+          # Compress everything into a ready-to-install zip container
           zip -r PuzzleForge_Unsigned.ipa Payload
           
       - name: Upload Finished File to GitHub
