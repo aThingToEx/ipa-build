@@ -27,6 +27,12 @@ jobs:
           npm install @capacitor/core @capacitor/cli @capacitor/ios
           npx cap init "PuzzleForge Hub" "com.sideload.puzzleforge" --web-dir=dist
           npx cap add ios
+          
+          # FIX: Force Podfile to target iOS 14.0 to resolve dependency compatibility error
+          sed -i '' "s/platform :ios, '13.0'/platform :ios, '14.0'/g" ios/App/Podfile || true
+          sed -i '' "s/platform :ios, '12.0'/platform :ios, '14.0'/g" ios/App/Podfile || true
+          
+          # Sync files over now that target version mismatch is fixed
           npx cap sync ios
 
       - name: Compile Native App Bundle (Unsigned)
@@ -37,6 +43,7 @@ jobs:
             -scheme App \
             -configuration Release \
             -sdk iphoneos \
+            IPHONEOS_DEPLOYMENT_TARGET=14.0 \
             CODE_SIGNING_ALLOWED=NO
 
       - name: Package App into IPA Container
