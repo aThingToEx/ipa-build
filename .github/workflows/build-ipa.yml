@@ -1,66 +1,82 @@
-name: Build Unsigned IPA for Sideloadly
+name: Build IPA
+
 on:
-  workflow_dispatch:
+workflow_dispatch:
 
 jobs:
-  build:
-    name: Build Web App and Package Unsigned IPA
-    runs-on: macos-latest
+build:
+runs-on: macos-latest
 
-    steps:
-      - name: Checkout Game Source Code
-        uses: actions/checkout@v4
+```
+steps:
+  - name: Checkout
+    uses: actions/checkout@v4
 
-      - name: Setup Node.js Environment
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'npm'
+  - name: Set up Node
+    uses: actions/setup-node@v4
+    with:
+      node-version: 20
+      cache: npm
 
-      - name: Install Dependencies and Build Web Assets
-        run: |
-          npm install
-          npm run build 
+  - name: Install and build website
+    run: |
+      npm ci || npm install
+      npm run build
 
-      - name: Inject Clean Native iOS Wrapper
-        run: |
-          # 1. Download a clean, ready-made native WKWebView wrapper template
-          git clone https://github.com ios-wrapper
-          
-          # 2. Clear out the template's placeholder website files
-          rm -rf ios-wrapper/ios-webview-app/www/*
-          
-          # 3. Move your compiled PuzzleForge game files straight into the native app package
-          cp -r dist/* ios-wrapper/ios-webview-app/www/
+  - name: Install fixed Capacitor version
+    run: |
+      npm install \
+        @capacitor/core@7.6.8 \
+        @capacitor/cli@7.6.8 \
+        @capacitor/ios@7.6.8
 
-      - name: Compile Native App Bundle (Unsigned)
-        run: |
-          cd ios-wrapper
-          
-          # Force Xcode to compile for a modern target without needing code signing
-          xcodebuild build \
-            -project ios-webview-app.xcodeproj \
-            -scheme ios-webview-app \
-            -configuration Release \
-            -sdk iphoneos \
-            IPHONEOS_DEPLOYMENT_TARGET=14.0 \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO
+  - name: Create Capacitor configuration
+    run: |
+      cat > capacitor.config.json <<'EOF'
+      {
+        "appId": "com.aThingToEx.puzzleforge",
+        "appName": "PuzzleForge",
+        "webDir": "dist"
+      }
+      EOF
 
-      - name: Package App into IPA Container
-        run: |
-          # Find the successfully compiled standalone .app folder
-          APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "ios-webview-app.app" -type d | head -n 1)
-          
-          # Structure the Payload file setup required by Sideloadly
-          mkdir -p Payload
-          cp -r "$APP_PATH" Payload/
-          
-          # Compress everything into a ready-to-install zip container
-          zip -r PuzzleForge_Unsigned.ipa Payload
-          
-      - name: Upload Finished File to GitHub
-        uses: actions/upload-artifact@v4
-        with:
-          name: PuzzleForge-Sideloadly-Ready
-          path: PuzzleForge_Unsigned.ipa
+  - name: Add iOS
+    run: |
+      npx cap add ios
+
+  - name: Build unsigned iOS app
+    run: |
+      xcodebuild \
+        -workspace ios/App/App.xcworkspace \
+        -scheme App \
+        -configuration Release \
+        -sdk iphoneos \
+        -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+        CODE_SIGNING_ALLOWED=NO \
+        CODE_SIGNING_REQUIRED=NO \
+        CODE_SIGN_IDENTITY=""
+
+  - name: Create IPA
+    run: |
+      APP_PATH="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/App.app"
+
+      if [ ! -d "$APP_PATH" ]; then
+        echo "ERROR: App.app was not created"
+        find "$RUNNER_TEMP/DerivedData" -name "*.app" -type d
+        exit 1
+      fi
+
+      mkdir Payload
+      cp -R "$APP_PATH" Payload/App.app
+
+      ditto -c -k --sequesterRsrc --keepParent \
+        Payload \
+        PuzzleForge.ipa
+
+  - name: Upload IPA
+    uses: actions/upload-artifact@v4
+    with:
+      name: PuzzleForge-IPA
+      path: PuzzleForge.ipa
+      if-no-files-found: error
+```
