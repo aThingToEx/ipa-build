@@ -24,20 +24,35 @@ jobs:
 
       - name: Initialize Capacitor iOS Container
         run: |
+          # Install development dependencies
           npm install @capacitor/core @capacitor/cli @capacitor/ios
-          npx cap init "PuzzleForge Hub" "com.sideload.puzzleforge" --web-dir=dist
           
-          # Add the native iOS platform template
-          npx cap add ios
+          # Initialize configuration files safely 
+          npx cap init "PuzzleForge Hub" "com.sideload.puzzleforge" --web-dir=dist --confirm
           
-          # Copy web files over WITHOUT running the broken automatic pod install step
+          # Use the CLI to scaffold structural configurations while forcing CocoaPods to skip execution
+          npx cap add ios --no-sync || true
+          
+          # Overwrite the newly created Podfile immediately with our forced iOS 14 configuration
+          cat << 'EOF' > ios/App/Podfile
+          platform :ios, '14.0'
+          use_frameworks!
+
+          # Set up framework dependencies manually
+          def capacitor_pods
+            pod 'Capacitor', :path => '../../node_modules/@capacitor/ios'
+            pod 'CapacitorCordova', :path => '../../node_modules/@capacitor/ios'
+          end
+
+          target 'App' do
+            capacitor_pods
+          end
+          EOF
+
+          # Copy compiled web assets manually over to the public workspace bundle
           npx cap copy ios
           
-          # Force the generated Podfile to target iOS 14.0 directly
-          sed -i '' "s/platform :ios, '13.0'/platform :ios, '14.0'/g" ios/App/Podfile || true
-          sed -i '' "s/platform :ios, '12.0'/platform :ios, '14.0'/g" ios/App/Podfile || true
-          
-          # Manually trigger CocoaPods with our corrected target configuration
+          # Manually trigger CocoaPods with the updated deployment targets
           cd ios/App
           pod install
 
