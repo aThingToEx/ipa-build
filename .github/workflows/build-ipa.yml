@@ -1,6 +1,6 @@
 name: Build Unsigned IPA for Sideloadly
 on:
-  workflow_dispatch: # Allows manual trigger via the Actions tab
+  workflow_dispatch:
 
 jobs:
   build:
@@ -28,11 +28,23 @@ jobs:
           npx cap init "PuzzleForge Hub" "com.sideload.puzzleforge" --web-dir=dist
           npx cap add ios
           
-          # FIX: Force Podfile to target iOS 14.0 to resolve dependency compatibility error
-          sed -i '' "s/platform :ios, '13.0'/platform :ios, '14.0'/g" ios/App/Podfile || true
-          sed -i '' "s/platform :ios, '12.0'/platform :ios, '14.0'/g" ios/App/Podfile || true
+          # FIX: Overwrite the Podfile configuration to explicitly force iOS 14.0 globally
+          cat << 'EOF' > ios/App/Podfile
+          platform :ios, '14.0'
+          use_frameworks!
+
+          # Target for Capacitor plugins
+          def capacitor_pods
+            pod 'Capacitor', :path => '../../node_modules/@capacitor/ios'
+            pod 'CapacitorCordova', :path => '../../node_modules/@capacitor/ios'
+          end
+
+          target 'App' do
+            capacitor_pods
+          end
+          EOF
           
-          # Sync files over now that target version mismatch is fixed
+          # Sync assets to container using our corrected deployment baseline
           npx cap sync ios
 
       - name: Compile Native App Bundle (Unsigned)
@@ -48,14 +60,9 @@ jobs:
 
       - name: Package App into IPA Container
         run: |
-          # Locate compiled .app folder inside Xcode build directories
           APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "App.app" -type d | head -n 1)
-          
-          # Structure the traditional Payload folder required by Sideloadly
           mkdir -p Payload
           cp -r "$APP_PATH" Payload/
-          
-          # Compress into an .ipa file
           zip -r PuzzleForge_Unsigned.ipa Payload
           
       - name: Upload Finished File to GitHub
