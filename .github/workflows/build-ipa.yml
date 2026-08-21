@@ -27,18 +27,24 @@ jobs:
           # Install development dependencies
           npm install @capacitor/core @capacitor/cli @capacitor/ios
           
-          # Initialize configuration files safely 
-          npx cap init "PuzzleForge Hub" "com.sideload.puzzleforge" --web-dir=dist --confirm
+          # Initialize configuration files non-interactively via direct arguments
+          npx cap init "PuzzleForge Hub" "com.sideload.puzzleforge" --web-dir=dist
           
-          # Use the CLI to scaffold structural configurations while forcing CocoaPods to skip execution
-          npx cap add ios --no-sync || true
+          # Create a dummy 'pod' command in the runner path to skip automatic pod install during add
+          mkdir -p bin
+          echo '#!/bin/bash' > bin/pod
+          echo 'echo "Mocking pod install to bypass target check..."' >> bin/pod
+          chmod +x bin/pod
+          export PATH="$PWD/bin:$PATH"
           
-          # Overwrite the newly created Podfile immediately with our forced iOS 14 configuration
+          # Run add ios safely (it will use our dummy pod command instead of crashing)
+          npx cap add ios
+          
+          # Overwrite the Podfile completely with a forced global iOS 14 configuration
           cat << 'EOF' > ios/App/Podfile
           platform :ios, '14.0'
           use_frameworks!
 
-          # Set up framework dependencies manually
           def capacitor_pods
             pod 'Capacitor', :path => '../../node_modules/@capacitor/ios'
             pod 'CapacitorCordova', :path => '../../node_modules/@capacitor/ios'
@@ -49,10 +55,13 @@ jobs:
           end
           EOF
 
-          # Copy compiled web assets manually over to the public workspace bundle
+          # Copy compiled web assets over to the native public assets folder
           npx cap copy ios
           
-          # Manually trigger CocoaPods with the updated deployment targets
+          # Remove the dummy pod script so we can trigger the genuine CocoaPods engine manually
+          rm bin/pod
+          
+          # Run the real pod install with our corrected deployment rules
           cd ios/App
           pod install
 
