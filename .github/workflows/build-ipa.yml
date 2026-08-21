@@ -1,82 +1,80 @@
 name: Build IPA
 
-"on":
-workflow_dispatch:
+on:
+  workflow_dispatch:
 
 jobs:
-build:
-runs-on: macos-latest
+  build:
+    runs-on: macos-latest
 
-```
-steps:
-  - name: Checkout
-    uses: actions/checkout@v4
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-  - name: Set up Node
-    uses: actions/setup-node@v4
-    with:
-      node-version: 20
-      cache: npm
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
 
-  - name: Install and build website
-    run: |
-      npm ci || npm install
-      npm run build
+      - name: Install and build website
+        run: |
+          npm ci || npm install
+          npm run build
 
-  - name: Install fixed Capacitor version
-    run: |
-      npm install \
-        @capacitor/core@7.6.8 \
-        @capacitor/cli@7.6.8 \
-        @capacitor/ios@7.6.8
+      - name: Install fixed Capacitor version
+        run: |
+          npm install \
+            @capacitor/core@7.6.8 \
+            @capacitor/cli@7.6.8 \
+            @capacitor/ios@7.6.8
 
-  - name: Create Capacitor configuration
-    run: |
-      cat > capacitor.config.json <<'EOF'
-      {
-        "appId": "com.aThingToEx.puzzleforge",
-        "appName": "PuzzleForge",
-        "webDir": "dist"
-      }
-      EOF
+      - name: Create Capacitor configuration
+        run: |
+          cat > capacitor.config.json <<'EOF'
+          {
+            "appId": "com.aThingToEx.puzzleforge",
+            "appName": "PuzzleForge",
+            "webDir": "dist"
+          }
+          EOF
 
-  - name: Add iOS
-    run: |
-      npx cap add ios
+      - name: Add iOS
+        run: |
+          npx cap add ios
 
-  - name: Build unsigned iOS app
-    run: |
-      xcodebuild \
-        -workspace ios/App/App.xcworkspace \
-        -scheme App \
-        -configuration Release \
-        -sdk iphoneos \
-        -derivedDataPath "$RUNNER_TEMP/DerivedData" \
-        CODE_SIGNING_ALLOWED=NO \
-        CODE_SIGNING_REQUIRED=NO \
-        CODE_SIGN_IDENTITY=""
+      - name: Build unsigned iOS app
+        run: |
+          xcodebuild \
+            -workspace ios/App/App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
 
-  - name: Create IPA
-    run: |
-      APP_PATH="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/App.app"
+      - name: Create IPA
+        run: |
+          APP_PATH="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/App.app"
 
-      if [ ! -d "$APP_PATH" ]; then
-        echo "ERROR: App.app was not created"
-        find "$RUNNER_TEMP/DerivedData" -name "*.app" -type d
-        exit 1
-      fi
+          if [ ! -d "$APP_PATH" ]; then
+            echo "ERROR: App.app was not created"
+            find "$RUNNER_TEMP/DerivedData" -name "*.app" -type d
+            exit 1
+          fi
 
-      mkdir Payload
-      cp -R "$APP_PATH" Payload/App.app
+          mkdir Payload
+          cp -R "$APP_PATH" Payload/App.app
 
-      ditto -c -k --sequesterRsrc --keepParent \
-        Payload \
-        PuzzleForge.ipa
+          ditto -c -k --sequesterRsrc --keepParent \
+            Payload \
+            PuzzleForge.ipa
 
-  - name: Upload IPA
-    uses: actions/upload-artifact@v4
-    with:
-      name: PuzzleForge-IPA
-      path: PuzzleForge.ipa
-      if-no-files-found: error
-```
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: PuzzleForge-IPA
+          path: PuzzleForge.ipa
+          if-no-files-found: error
